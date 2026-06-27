@@ -3,6 +3,7 @@ import glob
 import numpy as np
 from scipy.io import loadmat, savemat
 from scipy.signal import butter, sosfiltfilt
+from scipy.stats import ttest_ind
 from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
@@ -11,15 +12,33 @@ warnings.filterwarnings('ignore')
 class EEGPreprocessing:
     """
     EEG preprocessing pipeline for ADHD vs Control classification.
-    
+
     Pipeline stages:
-    1. Channel selection (optional: frontal, central, parietal, occipital, temporal, or all)
+    1. Channel selection (optional: frontal, central, parietal, occipital,
+       temporal, frontal_no_prefrontal, or all)
     2. Bandpass filter (0.5-30 Hz) - keeps delta, theta, alpha, beta bands
     3. Notch filter (49-51 Hz) - removes power line interference
-    4. Z-score standardization per channel
-    5. Save individual .mat files for each subject
+    4. Quality-control screening:
+       (a) amplitude-based IQR screening, clipping per-channel outliers
+           beyond [Q1 - k*IQR, Q3 + k*IQR]
+       (b) channel-variance screening, flagging channels whose variance is
+           an outlier relative to the other channels within the same
+           subject
+    5. Z-score standardization per channel
+    6. Save individual .mat files for each subject
+
+    Note on scope: no independent EOG channel, manual artifact
+    annotation, impedance log, or bad-channel label is available in the
+    public dataset. The quality-control steps below therefore detect
+    statistically anomalous amplitude or variance, not ocular or
+    muscular activity specifically, and do not constitute verified
+    artifact correction (e.g. EOG regression or expert-validated ICA
+    component rejection). They are reported as quality-control screening
+    and motivate the artifact-sensitivity analysis using the
+    'frontal_no_prefrontal' channel group, which excludes the two most
+    ocular-sensitive electrodes (Fp1, Fp2).
     """
-    
+
     # Channel mapping (standard 10-20 system)
     CHAN_MAP = {
         'Fp1': 0, 'Fp2': 1, 'F3': 2,  'F4': 3,  'C3': 4,
@@ -27,10 +46,11 @@ class EEGPreprocessing:
         'F7':10,  'F8':11, 'T7':12,  'T8':13,  'P7':14,
         'P8':15,  'Fz':16, 'Cz':17,  'Pz':18
     }
-    
+
     # Predefined channel groups
     CHANNEL_GROUPS = {
         'frontal': ['Fp1', 'F7', 'F3', 'Fz', 'F4', 'F8', 'Fp2'],
+        'frontal_no_prefrontal': ['F7', 'F3', 'Fz', 'F4', 'F8'],  # excludes Fp1/Fp2 for artifact-sensitivity analysis
         'central': ['C3', 'Cz', 'C4'],
         'parietal': ['P3', 'Pz', 'P4', 'P7', 'P8'],
         'occipital': ['O1', 'O2'],
@@ -38,12 +58,13 @@ class EEGPreprocessing:
         'midline': ['Fz', 'Cz', 'Pz'],
         'all': list(CHAN_MAP.keys())
     }
-    
-    def __init__(self, fs=128, output_dir="/kaggle/working/preprocessed", 
-                 channel_selection='all', custom_channels=None):
+
+    def __init__(self, fs=128, output_dir="/kaggle/working/preprocessed",
+                 channel_selection='all', custom_channels=None,
+                 apply_qc=True, iqr_k=3.0, channel_variance_zscore_thresh=3.5):
         """
         Initialize preprocessing pipeline.
-        
+
         Parameters:
         -----------
         fs : int
@@ -54,6 +75,9 @@ class EEGPreprocessing:
             Channel selection mode:
             - 'all': Use all 19 channels (default)
             - 'frontal': Use frontal channels (Fp1, F7, F3, Fz, F4, F8, Fp2)
+            - 'frontal_no_prefrontal': Use frontal channels excluding
+              Fp1/Fp2 (F7, F3, Fz, F4, F8) -- for the artifact-sensitivity
+              analysis
             - 'central': Use central channels (C3, Cz, C4)
             - 'parietal': Use parietal channels (P3, Pz, P4, P7, P8)
             - 'occipital': Use occipital channels (O1, O2)
@@ -62,10 +86,21 @@ class EEGPreprocessing:
             - list: Custom list of channel names (e.g., ['Fp1', 'Fp2', 'Fz'])
         custom_channels : list, optional
             Custom list of channel names. Overrides channel_selection if provided.
+        apply_qc : bool
+            If True (default), apply amplitude-IQR and channel-variance
+            quality-control screening after filtering.
+        iqr_k : float
+            Multiplier on the interquartile range defining the amplitude
+            screening bounds [Q1 - iqr_k*IQR, Q3 + iqr_k*IQR]. Samples
+            outside these bounds are clipped to the bound value.
+        channel_variance_zscore_thresh : float
+            Absolute z-score threshold, computed across a subject's own
+            selected channels, above which a channel's variance is
+            flagged as anomalous.
         """
         self.fs = fs
         self.output_dir = output_dir
-        
+
         # Channel selection logic
         if custom_channels is not None:
             self.selected_channels = custom_channels
@@ -81,35 +116,41 @@ class EEGPreprocessing:
                 f"Invalid channel_selection: {channel_selection}. "
                 f"Must be one of {list(self.CHANNEL_GROUPS.keys())} or a list of channel names."
             )
-        
+
         # Get channel indices
         self.selected_indices = [self.CHAN_MAP[ch] for ch in self.selected_channels]
-        
+
         # Filter parameters
         self.bp_order = 4
         self.bp_lo, self.bp_hi = 0.5, 30  # Keeps delta (0.5-4) + theta (4-8) + alpha (8-13) + beta (13-30)
         self.notch_order = 4
         self.notch_lo, self.notch_hi = 49, 51
-        
+
+        # Quality-control parameters
+        self.apply_qc = apply_qc
+        self.iqr_k = iqr_k
+        self.channel_variance_zscore_thresh = channel_variance_zscore_thresh
+
         # Design filters
         self._design_filters()
-        
+
         # Create output directories for each class
         self.control_dir = os.path.join(self.output_dir, "Control_prep")
         self.adhd_dir = os.path.join(self.output_dir, "ADHD_prep")
         os.makedirs(self.control_dir, exist_ok=True)
         os.makedirs(self.adhd_dir, exist_ok=True)
-        
+
         # Statistics tracking
         self.stats = {
             'total_processed': 0,
             'control_count': 0,
             'adhd_count': 0,
-            'failed_files': []
+            'failed_files': [],
+            'qc_records': []  # one dict per subject: {subject_id, label, mean_pct_clipped, flagged_channels}
         }
-        
+
         self._print_initialization()
-    
+
     def _print_initialization(self):
         """Print initialization information."""
         print("="*70)
@@ -122,47 +163,53 @@ class EEGPreprocessing:
         print(f"\nFiltering strategy:")
         print(f"  - Bandpass filter: {self.bp_lo}-{self.bp_hi} Hz (order {self.bp_order})")
         print(f"    This keeps all 4 EEG bands:")
-        print(f"      • Delta: 0.5-4 Hz")
-        print(f"      • Theta: 4-8 Hz")
-        print(f"      • Alpha: 8-13 Hz")
-        print(f"      • Beta: 13-30 Hz")
+        print(f"      - Delta: 0.5-4 Hz")
+        print(f"      - Theta: 4-8 Hz")
+        print(f"      - Alpha: 8-13 Hz")
+        print(f"      - Beta: 13-30 Hz")
         print(f"  - Notch filter: {self.notch_lo}-{self.notch_hi} Hz (order {self.notch_order})")
         print(f"    Removes power line interference")
+        print(f"\nQuality-control screening: {'ENABLED' if self.apply_qc else 'DISABLED'}")
+        if self.apply_qc:
+            print(f"  - Amplitude IQR screening: clip beyond Q1 - {self.iqr_k}*IQR / Q3 + {self.iqr_k}*IQR")
+            print(f"  - Channel-variance screening: flag |z| > {self.channel_variance_zscore_thresh}")
+            print(f"  - Note: detects statistically anomalous amplitude/variance only;")
+            print(f"    not a substitute for verified ocular/movement-artifact correction")
         print(f"\nNormalization: Z-score per channel")
         print(f"Output directory: {self.output_dir}")
         print(f"  - Control subjects: {self.control_dir}")
         print(f"  - ADHD subjects: {self.adhd_dir}")
         print("="*70)
-    
+
     def _design_filters(self):
         """Design Butterworth bandpass and notch filters."""
         nyq = 0.5 * self.fs
-        
+
         # Bandpass filter: keeps 0.5-30 Hz (all 4 EEG bands)
         self.bp_sos = butter(
-            self.bp_order, 
-            [self.bp_lo/nyq, self.bp_hi/nyq], 
-            btype='band', 
+            self.bp_order,
+            [self.bp_lo/nyq, self.bp_hi/nyq],
+            btype='band',
             output='sos'
         )
-        
+
         # Notch filter: removes 49-51 Hz (power line noise)
         self.notch_sos = butter(
-            self.notch_order, 
-            [self.notch_lo/nyq, self.notch_hi/nyq], 
-            btype='bandstop', 
+            self.notch_order,
+            [self.notch_lo/nyq, self.notch_hi/nyq],
+            btype='bandstop',
             output='sos'
         )
-    
+
     def _find_signal_in_mat(self, mat_dict):
         """
         Find EEG signal array in MAT file dictionary.
-        
+
         Parameters:
         -----------
         mat_dict : dict
             Dictionary from scipy.io.loadmat
-            
+
         Returns:
         --------
         var_name : str
@@ -176,16 +223,16 @@ class EEGPreprocessing:
             if isinstance(v, np.ndarray) and v.size > 1000:
                 return k, v
         raise ValueError("No suitable signal array found in MAT file.")
-    
+
     def select_channels(self, signal):
         """
         Select specific channels from the full signal.
-        
+
         Parameters:
         -----------
         signal : ndarray
             Input signal [channels, samples] with all 19 channels
-            
+
         Returns:
         --------
         selected : ndarray
@@ -193,30 +240,30 @@ class EEGPreprocessing:
         """
         if self.channel_mode == 'all':
             return signal
-        
+
         # Validate that we have enough channels
         if signal.shape[0] < max(self.selected_indices) + 1:
             raise ValueError(
                 f"Signal has only {signal.shape[0]} channels, "
                 f"but selection requires at least {max(self.selected_indices) + 1} channels."
             )
-        
+
         return signal[self.selected_indices, :]
-    
+
     def filter_signal(self, signal):
         """
         Apply bandpass (0.5-30 Hz) and notch (49-51 Hz) filters.
-        
+
         This keeps delta + theta + alpha + beta bands and removes:
         - Frequencies below 0.5 Hz (slow drifts)
         - Frequencies above 30 Hz (high-frequency noise, muscle artifacts)
         - Power line interference at 50 Hz
-        
+
         Parameters:
         -----------
         signal : ndarray
             Input signal [channels, samples]
-            
+
         Returns:
         --------
         filtered : ndarray
@@ -227,16 +274,139 @@ class EEGPreprocessing:
         # Apply notch filter (49-51 Hz)
         filtered = sosfiltfilt(self.notch_sos, filtered, axis=-1)
         return filtered
-    
-    def z_score_standardization(self, signal):
+
+    def amplitude_iqr_screening(self, signal):
         """
-        Apply z-score normalization independently for each channel.
-        
+        Flag and clip per-channel amplitude outliers using the
+        interquartile range (IQR) rule.
+
+        For each channel, samples falling outside
+        [Q1 - iqr_k*IQR, Q3 + iqr_k*IQR] are clipped to the corresponding
+        bound. This is a coarse amplitude-based screen for transient,
+        high-amplitude excursions (e.g. movement spikes); it does not
+        identify the source of the excursion.
+
         Parameters:
         -----------
         signal : ndarray
             Input signal [channels, samples]
-            
+
+        Returns:
+        --------
+        cleaned : ndarray
+            Amplitude-clipped signal, same shape as input
+        pct_clipped : ndarray
+            Percentage of samples clipped, one value per channel
+        """
+        cleaned = signal.copy()
+        n_channels, n_samples = signal.shape
+        pct_clipped = np.zeros(n_channels)
+
+        for ch in range(n_channels):
+            data = signal[ch, :]
+            q1, q3 = np.percentile(data, [25, 75])
+            iqr = q3 - q1
+            lower = q1 - self.iqr_k * iqr
+            upper = q3 + self.iqr_k * iqr
+            flagged = (data < lower) | (data > upper)
+            pct_clipped[ch] = 100.0 * flagged.sum() / n_samples
+            cleaned[ch, :] = np.clip(data, lower, upper)
+
+        return cleaned, pct_clipped
+
+    def channel_variance_screening(self, signal, channel_names):
+        """
+        Flag channels whose variance is an outlier relative to the other
+        selected channels within the same subject.
+
+        This is a within-subject, within-montage comparison: it computes
+        the variance of each channel in the current selection, then
+        scores those variances using a median/MAD-based robust z-score
+        (modified z-score), rather than a mean/standard-deviation
+        z-score. With as few as 7 channels, a mean/std z-score is
+        mathematically bounded by approximately sqrt(n-1) for any single
+        point, because an extreme outlier inflates its own denominator
+        (the sample standard deviation). For n=7 channels this bound is
+        sqrt(6) ~= 2.449, meaning a threshold of 3.0 could never be
+        exceeded regardless of how extreme the outlier is. The
+        median/MAD formulation does not have this masking property and
+        is the standard robust alternative for small-n outlier
+        detection. It does not compare against population norms or
+        other subjects, since absolute EEG amplitude varies considerably
+        across recordings and channel-of-reference setups.
+
+        Parameters:
+        -----------
+        signal : ndarray
+            Input signal [channels, samples]
+        channel_names : list of str
+            Channel name corresponding to each row of signal, in order
+
+        Returns:
+        --------
+        variances : ndarray
+            Variance per channel
+        flagged_channels : list of str
+            Channel names whose |modified z-score| exceeds
+            self.channel_variance_zscore_thresh
+        """
+        variances = signal.var(axis=1)
+        median_var = np.median(variances)
+        mad = np.median(np.abs(variances - median_var))
+
+        if mad > 0:
+            # 0.6745 scales the MAD to be consistent with the standard
+            # deviation under a normal distribution
+            modified_z_scores = 0.6745 * (variances - median_var) / mad
+        else:
+            modified_z_scores = np.zeros_like(variances)
+
+        flagged_idx = np.where(np.abs(modified_z_scores) > self.channel_variance_zscore_thresh)[0]
+        flagged_channels = [channel_names[i] for i in flagged_idx]
+
+        return variances, flagged_channels
+
+    def quality_control_screening(self, signal, channel_names):
+        """
+        Apply amplitude-IQR screening followed by channel-variance
+        screening.
+
+        Parameters:
+        -----------
+        signal : ndarray
+            Filtered signal [channels, samples], already restricted to
+            the selected channel set
+        channel_names : list of str
+            Channel name corresponding to each row of signal, in order
+
+        Returns:
+        --------
+        cleaned : ndarray
+            Signal after amplitude clipping
+        diagnostics : dict
+            {'pct_clipped_per_channel', 'mean_pct_clipped',
+             'channel_variances', 'flagged_channels'}
+        """
+        cleaned, pct_clipped = self.amplitude_iqr_screening(signal)
+        variances, flagged_channels = self.channel_variance_screening(cleaned, channel_names)
+
+        diagnostics = {
+            'pct_clipped_per_channel': {ch: float(pct_clipped[i]) for i, ch in enumerate(channel_names)},
+            'mean_pct_clipped': float(pct_clipped.mean()),
+            'channel_variances': {ch: float(variances[i]) for i, ch in enumerate(channel_names)},
+            'flagged_channels': flagged_channels
+        }
+        return cleaned, diagnostics
+
+    def z_score_standardization(self, signal):
+        """
+        Apply z-score normalization independently for each channel.
+
+        Parameters:
+        -----------
+        signal : ndarray
+            Input signal [channels, samples]
+
         Returns:
         --------
         normalized : ndarray
@@ -251,18 +421,18 @@ class EEGPreprocessing:
             else:
                 normalized[ch, :] = signal[ch, :]
         return normalized
-    
+
     def process_and_save_file(self, filepath, label):
         """
         Process one EEG file and save as individual .mat file.
-        
+
         Parameters:
         -----------
         filepath : str
             Path to input .mat file
         label : str
             'Control' or 'ADHD'
-            
+
         Returns:
         --------
         success : bool
@@ -272,29 +442,38 @@ class EEGPreprocessing:
             # Load MAT file
             mat = loadmat(filepath)
             var_name, signal = self._find_signal_in_mat(mat)
-            
+
             # Ensure shape is [channels, samples]
             if signal.ndim == 1:
                 signal = signal[np.newaxis, :]
             elif signal.shape[0] > signal.shape[-1]:
                 signal = signal.T
-            
+
             # Get subject ID from filename
             subject_id = os.path.splitext(os.path.basename(filepath))[0]
-            
-            # STEP 1: Select channels (frontal, all, or custom)
+
+            # STEP 1: Select channels (frontal, all, custom, etc.)
             signal = self.select_channels(signal)
-            
+
             # STEP 2: Apply bandpass (0.5-30 Hz) and notch (49-51 Hz) filters
-            # This automatically keeps delta + theta + alpha + beta
             signal = self.filter_signal(signal)
-            
-            # STEP 3: Z-score standardization per channel
+
+            # STEP 3: Quality-control screening (amplitude IQR + channel variance)
+            qc_diag = {
+                'pct_clipped_per_channel': {},
+                'mean_pct_clipped': 0.0,
+                'channel_variances': {},
+                'flagged_channels': []
+            }
+            if self.apply_qc:
+                signal, qc_diag = self.quality_control_screening(signal, self.selected_channels)
+
+            # STEP 4: Z-score standardization per channel
             signal = self.z_score_standardization(signal)
-            
+
             # Prepare output data
             output_data = {
-                'signal': signal,  # Filtered signal with selected channels
+                'signal': signal,  # Filtered, QC-screened signal with selected channels
                 'label': label,
                 'subject_id': subject_id,
                 'fs': self.fs,
@@ -304,9 +483,15 @@ class EEGPreprocessing:
                 'channel_indices': self.selected_indices,
                 'channel_mode': self.channel_mode,
                 'frequency_range': f'{self.bp_lo}-{self.bp_hi} Hz',
-                'bands_included': 'delta (0.5-4) + theta (4-8) + alpha (8-13) + beta (13-30) Hz'
+                'bands_included': 'delta (0.5-4) + theta (4-8) + alpha (8-13) + beta (13-30) Hz',
+                'qc_applied': self.apply_qc,
+                'qc_iqr_k': self.iqr_k,
+                'qc_mean_pct_clipped': qc_diag['mean_pct_clipped'],
+                'qc_pct_clipped_per_channel': qc_diag['pct_clipped_per_channel'],
+                'qc_channel_variances': qc_diag['channel_variances'],
+                'qc_flagged_channels': qc_diag['flagged_channels']
             }
-            
+
             # Save to .mat file in appropriate folder
             output_filename = f"{subject_id}_preprocessed.mat"
             if label == 'Control':
@@ -314,25 +499,33 @@ class EEGPreprocessing:
             else:  # ADHD
                 output_path = os.path.join(self.adhd_dir, output_filename)
             savemat(output_path, output_data)
-            
+
             # Update statistics
             self.stats['total_processed'] += 1
             if label == 'Control':
                 self.stats['control_count'] += 1
             else:
                 self.stats['adhd_count'] += 1
-            
+
+            self.stats['qc_records'].append({
+                'subject_id': subject_id,
+                'label': label,
+                'mean_pct_clipped': qc_diag['mean_pct_clipped'],
+                'flagged_channels': qc_diag['flagged_channels'],
+                'n_flagged_channels': len(qc_diag['flagged_channels'])
+            })
+
             return True
-            
+
         except Exception as e:
             print(f"\nError processing {filepath}: {str(e)}")
             self.stats['failed_files'].append(filepath)
             return False
-    
+
     def process_dataset(self, data_dirs):
         """
         Process entire dataset from multiple directories.
-        
+
         Parameters:
         -----------
         data_dirs : dict
@@ -342,21 +535,84 @@ class EEGPreprocessing:
         print("\n" + "="*70)
         print("STARTING DATASET PROCESSING")
         print("="*70)
-        
+
         for label, data_dir in data_dirs.items():
             if not os.path.exists(data_dir):
                 print(f"\nWarning: Directory {data_dir} does not exist. Skipping {label}.")
                 continue
-            
+
             mat_files = glob.glob(os.path.join(data_dir, "*.mat"))
             print(f"\nProcessing {label}: {len(mat_files)} files")
-            
+
             for filepath in tqdm(mat_files, desc=f"Processing {label}"):
                 self.process_and_save_file(filepath, label)
-        
+
         # Print final statistics
         self.print_summary()
-    
+        if self.apply_qc:
+            self.compute_qc_group_comparison()
+
+    def compute_qc_group_comparison(self):
+        """
+        Compare quality-control screening outcomes between the ADHD and
+        Control groups:
+          (1) mean percentage of clipped samples per subject, via Welch's
+              t-test (unequal variances assumed);
+          (2) the number of subjects with at least one flagged
+              (variance-outlier) channel, per group.
+
+        This supports the discussion of whether amplitude- or
+        variance-based artifact load differs systematically between
+        groups, which is directly relevant to the duration/artifact
+        confound raised in review.
+
+        Returns:
+        --------
+        result : dict
+            {'control_mean_pct_clipped', 'control_std_pct_clipped',
+             'adhd_mean_pct_clipped', 'adhd_std_pct_clipped',
+             't_stat', 'p_value', 'n_control', 'n_adhd',
+             'n_control_flagged', 'n_adhd_flagged'}
+        """
+        records = self.stats['qc_records']
+        control_pct = np.array([r['mean_pct_clipped'] for r in records if r['label'] == 'Control'])
+        adhd_pct = np.array([r['mean_pct_clipped'] for r in records if r['label'] == 'ADHD'])
+        n_control_flagged = sum(1 for r in records if r['label'] == 'Control' and r['n_flagged_channels'] > 0)
+        n_adhd_flagged = sum(1 for r in records if r['label'] == 'ADHD' and r['n_flagged_channels'] > 0)
+
+        result = {
+            'control_mean_pct_clipped': float(control_pct.mean()) if len(control_pct) else float('nan'),
+            'control_std_pct_clipped': float(control_pct.std()) if len(control_pct) else float('nan'),
+            'adhd_mean_pct_clipped': float(adhd_pct.mean()) if len(adhd_pct) else float('nan'),
+            'adhd_std_pct_clipped': float(adhd_pct.std()) if len(adhd_pct) else float('nan'),
+            'n_control': len(control_pct),
+            'n_adhd': len(adhd_pct),
+            'n_control_flagged': n_control_flagged,
+            'n_adhd_flagged': n_adhd_flagged,
+            't_stat': float('nan'),
+            'p_value': float('nan')
+        }
+
+        if len(control_pct) > 1 and len(adhd_pct) > 1:
+            t_stat, p_value = ttest_ind(control_pct, adhd_pct, equal_var=False)
+            result['t_stat'] = float(t_stat)
+            result['p_value'] = float(p_value)
+
+        print("\n" + "="*70)
+        print("QUALITY-CONTROL SCREENING: GROUP COMPARISON")
+        print("="*70)
+        print(f"Control (n={result['n_control']}): "
+              f"{result['control_mean_pct_clipped']:.3f} +/- {result['control_std_pct_clipped']:.3f} % samples clipped, "
+              f"{result['n_control_flagged']} subjects with >=1 flagged channel")
+        print(f"ADHD    (n={result['n_adhd']}): "
+              f"{result['adhd_mean_pct_clipped']:.3f} +/- {result['adhd_std_pct_clipped']:.3f} % samples clipped, "
+              f"{result['n_adhd_flagged']} subjects with >=1 flagged channel")
+        if not np.isnan(result['p_value']):
+            print(f"Welch's t-test (mean %% clipped): t = {result['t_stat']:.3f}, p = {result['p_value']:.4f}")
+        print("="*70)
+
+        return result
+
     def print_summary(self):
         """Print processing summary statistics."""
         print("\n" + "="*70)
@@ -365,50 +621,71 @@ class EEGPreprocessing:
         print(f"Total files processed: {self.stats['total_processed']}")
         print(f"  - Control: {self.stats['control_count']}")
         print(f"  - ADHD: {self.stats['adhd_count']}")
-        
+
         if self.stats['failed_files']:
             print(f"\nFailed files: {len(self.stats['failed_files'])}")
             for f in self.stats['failed_files']:
                 print(f"  - {f}")
         else:
             print("\nAll files processed successfully!")
-        
+
         print(f"\nPreprocessed files saved to:")
         print(f"  - {self.control_dir} ({self.stats['control_count']} files)")
         print(f"  - {self.adhd_dir} ({self.stats['adhd_count']} files)")
         print(f"\nChannel configuration:")
         print(f"  - Mode: {self.channel_mode}")
         print(f"  - Channels ({len(self.selected_channels)}): {', '.join(self.selected_channels)}")
+
+        if self.apply_qc and self.stats['qc_records']:
+            pct_clipped = [r['mean_pct_clipped'] for r in self.stats['qc_records']]
+            n_flagged_total = sum(1 for r in self.stats['qc_records'] if r['n_flagged_channels'] > 0)
+            print(f"\nQuality-control screening:")
+            print(f"  - Mean %% samples clipped per subject: {np.mean(pct_clipped):.3f} "
+                  f"(std {np.std(pct_clipped):.3f}, range {np.min(pct_clipped):.3f}-{np.max(pct_clipped):.3f})")
+            print(f"  - Subjects with >=1 flagged channel: {n_flagged_total} / {len(self.stats['qc_records'])}")
+
         print("\nEach .mat file contains:")
         print("  - signal: [n_selected_channels, samples]")
         print("    Contains delta (0.5-4) + theta (4-8) + alpha (8-13) + beta (13-30) Hz")
+        print("    Amplitude-clipped per the IQR quality-control screen")
         print("  - label: 'Control' or 'ADHD'")
         print("  - subject_id: subject identifier")
         print("  - channel_names: list of channel names")
         print("  - channel_indices: list of original channel indices")
         print("  - fs: sampling frequency")
+        print("  - qc_applied, qc_iqr_k, qc_mean_pct_clipped,")
+        print("    qc_pct_clipped_per_channel, qc_channel_variances, qc_flagged_channels")
         print("  - Signal is z-score normalized per channel")
         print("  - Frequencies < 0.5 Hz and > 30 Hz removed")
         print("  - Power line interference (50 Hz) removed")
         print("="*70)
 
 
-
 if __name__ == "__main__":
-    
+
     # Configuration
     DATA_DIRS = {
-        "Control": "/kaggle/input/eeg-dataset-adhd-control/Control",
-        "ADHD": "/kaggle/input/eeg-dataset-adhd-control/ADHD"
+        "Control": ".../adhd-control/Control", #Raw Dataset from IEEE Dataport
+        "ADHD": ".../adhd-control/ADHD" #Raw Dataset from IEEE Dataport
     }
-    
+
     OUTPUT_DIR = "/kaggle/working/preprocessed"
+
+    # Main analysis: 7 frontal channels, including Fp1/Fp2
     preprocessor = EEGPreprocessing(
-        fs=128, 
+        fs=128,
         output_dir=OUTPUT_DIR,
-        channel_selection='frontal'  # Use: Fp1, F7, F3, Fz, F4, F8, Fp2
+        channel_selection='frontal',  # Fp1, F7, F3, Fz, F4, F8, Fp2
+        apply_qc=True
     )
-    
-    
-    # Process entire dataset
     preprocessor.process_dataset(DATA_DIRS)
+
+    # Artifact-sensitivity analysis: 5 channels, excluding Fp1/Fp2
+    OUTPUT_DIR_SENSITIVITY = "/kaggle/working/preprocessed_sensitivity"
+    preprocessor_sensitivity = EEGPreprocessing(
+        fs=128,
+        output_dir=OUTPUT_DIR_SENSITIVITY,
+        channel_selection='frontal_no_prefrontal',  # F7, F3, Fz, F4, F8
+        apply_qc=True
+    )
+    preprocessor_sensitivity.process_dataset(DATA_DIRS)

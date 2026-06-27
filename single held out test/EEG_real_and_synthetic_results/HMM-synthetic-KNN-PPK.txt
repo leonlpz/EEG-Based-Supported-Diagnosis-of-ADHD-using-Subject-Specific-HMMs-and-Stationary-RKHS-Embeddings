@@ -1,0 +1,73 @@
+============================================================
+OPTIMIZATION COMPLETE
+============================================================
+Best trial:
+  rho: 0.226465
+  T: 8
+  k_neighbors: 7
+  CV Balanced Accuracy: 0.8595
+
+Cross-validation with best params...
+
+  Running 7-fold cross-validation...
+  Parameters: rho=0.226465, T=8, k=7
+  Computing full similarity matrix...
+    Fold 1: Acc=0.8333, BalAcc=0.8333, AUC=0.9444, MCC=0.7071
+    Fold 2: Acc=0.9167, BalAcc=0.9167, AUC=0.8611, MCC=0.8452
+    Fold 3: Acc=0.8333, BalAcc=0.8333, AUC=0.7500, MCC=0.7071
+    Fold 4: Acc=0.8182, BalAcc=0.8167, AUC=0.7667, MCC=0.6333
+    Fold 5: Acc=0.8182, BalAcc=0.8000, AUC=0.7000, MCC=0.6708
+    Fold 6: Acc=0.9091, BalAcc=0.9000, AUC=1.0000, MCC=0.8281
+    Fold 7: Acc=0.9091, BalAcc=0.9167, AUC=1.0000, MCC=0.8333
+
+============================================================
+CROSS-VALIDATION RESULTS
+============================================================
+  rho: 0.226465
+  T: 8
+  k_neighbors: 7
+  Accuracy: 0.8626 ± 0.0429
+  Balanced Accuracy: 0.8595 ± 0.0462
+  AUC-ROC: 0.8603 ± 0.1151
+  MCC: 0.7464 ± 0.0807
+
+============================================================
+EVALUATING ON TEST SET
+============================================================
+  Computing kernels (T=8, rho=0.226465)...
+    Train size: 80
+    Test size: 20
+  Computing train-train kernels...
+  Computing test-test kernels (for normalization)...
+  Computing test-train kernels...
+  Normalizing kernels...
+
+  Distance matrix diagnostics:
+    D_train: shape=(80, 80), min=0.000000, max=0.320742, mean=0.034181
+    D_test:  shape=(20, 80), min=0.000006, max=0.173866, mean=0.030017
+    D_test std per sample: min=0.019935, max=0.041351
+
+  Training KNN and predicting...
+  Prediction distribution: [10 10]
+  Probability range: [0.0000, 1.0000]
+
+============================================================
+TEST RESULTS
+============================================================
+  Accuracy:           0.9000
+  Balanced Accuracy:  0.9000
+  AUC-ROC:            0.9250
+  Matthews Corr:      0.8000
+
+Test Confusion Matrix:
+              Control  ADHD
+Control       9       1      
+ADHD          1       9 
+
+============================================================
+ANALYSIS COMPLETE
+============================================================
+Best rho: 0.226465
+Best T: 8
+Best k_neighbors: 7
+Final test balanced accuracy: 0.9000

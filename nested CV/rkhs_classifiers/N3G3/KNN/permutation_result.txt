@@ -1,0 +1,7 @@
+Config tag                 : N3G3
+Classifier                 : KNN
+Observed balanced accuracy : 0.663333
+n_permutations             : 1000
+p-value                    : 0.000000
+Significant at 0.05        : True
+Perm test params           : ell=0.03162  k=1

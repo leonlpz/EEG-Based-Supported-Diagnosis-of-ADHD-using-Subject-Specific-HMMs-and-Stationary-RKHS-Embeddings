@@ -1,0 +1,8 @@
+Config tag                 : N3G3
+Classifier                 : SVM
+Observed balanced accuracy : 0.735000
+n_permutations             : 1000
+p-value                    : 0.000000
+Significant at 0.05        : True
+Perm test params           : ell=0.3162  gamma=0.1  C=100
+Note: ell (base RKHS bandwidth) and gamma (SVM RBF envelope) are distinct parameters

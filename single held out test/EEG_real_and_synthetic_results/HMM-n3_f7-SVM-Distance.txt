@@ -1,0 +1,84 @@
+Optimization completed!
+Best balanced accuracy: 0.8520
+Best parameters:
+  sigma_kernel: 0.0413996
+  gamma: 0.00296351
+  C: 31.7991
+
+Cross-validation with best params...
+Computing 96x96 RKHS distance matrix (σ_kernel=0.0413996)...
+  Processed 20/96 rows
+  Processed 40/96 rows
+  Processed 60/96 rows
+  Processed 80/96 rows
+Done. Stats: min=0.000000, max=0.003895, mean=0.000328
+Performing 7-fold cross-validation with SVM...
+  σ_kernel=0.0413996, γ=0.00296351, C=31.7991
+  Fold 1/7
+    Acc=0.8571, BalAcc=0.8571, AUC=0.9184, MCC=0.7454
+  Fold 2/7
+    Acc=0.8571, BalAcc=0.8571, AUC=0.9796, MCC=0.7143
+  Fold 3/7
+    Acc=0.9286, BalAcc=0.9286, AUC=0.9388, MCC=0.8660
+  Fold 4/7
+    Acc=0.7143, BalAcc=0.7143, AUC=0.6939, MCC=0.5222
+  Fold 5/7
+    Acc=0.8571, BalAcc=0.8571, AUC=0.9388, MCC=0.7143
+  Fold 6/7
+    Acc=1.0000, BalAcc=1.0000, AUC=1.0000, MCC=1.0000
+  Fold 7/7
+    Acc=0.7692, BalAcc=0.7500, AUC=0.8810, MCC=0.5916
+
+============================================================
+CROSS-VALIDATION RESULTS
+============================================================
+  σ_kernel: 0.0413996
+  γ (gamma): 0.00296351
+  C: 31.7991
+  Accuracy: 0.8548 ± 0.0875
+  Balanced Accuracy: 0.8520 ± 0.0904
+  AUC-ROC: 0.9072 ± 0.0942
+  MCC: 0.7363 ± 0.1484
+
+============================================================
+FINAL TEST SET EVALUATION
+============================================================
+Computing 96x96 RKHS distance matrix (σ_kernel=0.0413996)...
+  Processed 20/96 rows
+  Processed 40/96 rows
+  Processed 60/96 rows
+  Processed 80/96 rows
+Done. Stats: min=0.000000, max=0.003895, mean=0.000328
+
+Checking training kernel matrix...
+Kernel diagnostics:
+  Min eigenvalue: 2.896009e-02
+  Max eigenvalue: 9.863295e+00
+  Condition number: 3.405824e+02
+  Status: Kernel is well-conditioned
+Computing 121x121 RKHS distance matrix (σ_kernel=0.0413996)...
+  Processed 20/121 rows
+  Processed 40/121 rows
+  Processed 60/121 rows
+  Processed 80/121 rows
+  Processed 100/121 rows
+  Processed 120/121 rows
+Done. Stats: min=0.000000, max=0.008089, mean=0.000518
+  Accuracy:           0.8400
+  Balanced Accuracy:  0.8429
+  AUC-ROC:            0.8974
+  Matthews Corr:      0.6903
+
+Test Confusion Matrix:
+              Control  ADHD
+Control       11      1      
+ADHD          3       10  
+
+
+============================================================
+ANALYSIS COMPLETE
+============================================================
+Best σ_kernel: 0.0413996
+Best γ (gamma): 0.00296351
+Best C: 31.7991
+Final test balanced accuracy: 0.8429

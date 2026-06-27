@@ -1,0 +1,10 @@
+Config tag                 : N5G5
+Classifier                 : PPK-SVM
+Observed balanced accuracy : 0.730385
+n_permutations             : 1000
+p-value                    : 0.000000
+Significant at 0.05        : True
+Perm test params           : T=1  rho=0.4  C=10
+Note: PPK uses INITIAL pi (not stationary) and the single
+best-weight GMM component per state, per the original
+PPK formulation between HMMs.

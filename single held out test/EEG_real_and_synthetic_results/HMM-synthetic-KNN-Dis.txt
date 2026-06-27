@@ -1,0 +1,69 @@
+Optimization completed!
+Best balanced accuracy: 0.9000
+Best parameters: {'sigma_kernel': 0.8935221977054895, 'k_neighbors': 9}
+
+Cross-validation with best params...
+Computing 80x80 RKHS distance matrix (σ=0.893522)...
+  Processed 20/80 rows
+  Processed 40/80 rows
+  Processed 60/80 rows
+  Processed 80/80 rows
+Done. Stats: min=0.000000, max=0.000976, mean=0.000117
+Performing 7-fold cross-validation...
+  Fold 1/7
+    Acc=1.0000, BalAcc=1.0000, AUC=1.0000, MCC=1.0000
+  Fold 2/7
+    Acc=0.8333, BalAcc=0.8333, AUC=0.9444, MCC=0.6667
+  Fold 3/7
+    Acc=0.9167, BalAcc=0.9167, AUC=0.8472, MCC=0.8452
+  Fold 4/7
+    Acc=0.9091, BalAcc=0.9000, AUC=0.8500, MCC=0.8281
+  Fold 5/7
+    Acc=0.7273, BalAcc=0.7333, AUC=0.8333, MCC=0.4667
+  Fold 6/7
+    Acc=1.0000, BalAcc=1.0000, AUC=1.0000, MCC=1.0000
+  Fold 7/7
+    Acc=0.9091, BalAcc=0.9167, AUC=0.9667, MCC=0.8333
+
+============================================================
+CROSS-VALIDATION RESULTS
+============================================================
+  σ_kernel: 0.893522
+  k_neighbors: 9
+  Accuracy: 0.8994 ± 0.0884
+  Balanced Accuracy: 0.9000 ± 0.0868
+  AUC-ROC: 0.9202 ± 0.0690
+  MCC: 0.8057 ± 0.1743
+
+============================================================
+FINAL TEST SET EVALUATION
+============================================================
+Computing 80x80 RKHS distance matrix (σ=0.893522)...
+  Processed 20/80 rows
+  Processed 40/80 rows
+  Processed 60/80 rows
+  Processed 80/80 rows
+Done. Stats: min=0.000000, max=0.000976, mean=0.000117
+Computing 100x100 RKHS distance matrix (σ=0.893522)...
+  Processed 20/100 rows
+  Processed 40/100 rows
+  Processed 60/100 rows
+  Processed 80/100 rows
+  Processed 100/100 rows
+Done. Stats: min=0.000000, max=0.000976, mean=0.000127
+  Accuracy:           0.9500
+  Balanced Accuracy:  0.9500
+  AUC-ROC:            1.0000
+  Matthews Corr:      0.9045
+
+Test Confusion Matrix:
+              Control  ADHD
+Control       10      0      
+ADHD          1       9  
+
+============================================================
+ANALYSIS COMPLETE
+============================================================
+Best σ_kernel: 0.893522
+Best k_neighbors: 9
+Final test balanced accuracy: 0.9500

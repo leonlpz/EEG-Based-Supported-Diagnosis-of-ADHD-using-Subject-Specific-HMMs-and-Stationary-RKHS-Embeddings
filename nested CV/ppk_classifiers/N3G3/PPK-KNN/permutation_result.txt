@@ -1,0 +1,10 @@
+Config tag                 : N3G3
+Classifier                 : PPK-KNN
+Observed balanced accuracy : 0.722949
+n_permutations             : 1000
+p-value                    : 0.000000
+Significant at 0.05        : True
+Perm test params           : T=7  rho=0.55  k=1
+Note: PPK uses INITIAL pi (not stationary) and the single
+best-weight GMM component per state, per the original
+PPK formulation between HMMs.

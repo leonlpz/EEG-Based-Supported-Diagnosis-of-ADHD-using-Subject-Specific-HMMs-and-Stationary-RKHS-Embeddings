@@ -1,6 +1,4 @@
-# HMM-RKHS Classification Project
-
-**Interpretable EEG-Based Supported Diagnosis of ADHD Using Subject-Specific HMMs and Stationary RKHS Embeddings.**
+# Interpretable EEG-Based Supported Diagnosis of ADHD Using Subject-Specific HMMs and Stationary RKHS Embeddings
 
 This repository contains the full pipeline for classifying ADHD versus control children from resting/task EEG. Each subject's frontal EEG is modeled with a dedicated Hidden Markov Model with Gaussian Mixture Model emissions (HMM-GMM). The fitted generative models are then embedded in a Reproducing Kernel Hilbert Space (RKHS), where inter-subject similarity is computed in closed form. These kernels feed K-Nearest Neighbors (KNN) and Support Vector Machine (SVM) classifiers, evaluated on both real and synthetic EEG under several validation protocols of increasing statistical rigor.
 
@@ -27,12 +25,11 @@ The pipeline proceeds in four stages:
 
 ## Evaluation protocols
 
-The repository implements three evaluation regimes, ordered by statistical rigor. This ordering is deliberate: comparing them quantifies how much reported performance depends on the chosen protocol, a point of methodological heterogeneity in the ADHD EEG literature.
+The repository implements two evaluation regimes, ordered by statistical rigor. This ordering is deliberate: comparing them quantifies how much reported performance depends on the chosen protocol, a point of methodological heterogeneity in the ADHD EEG literature.
 
 | Protocol | Description | Outputs |
 |----------|-------------|---------|
 | **Single hold-out** | One subject-level 80/20 split. | Optimistic, high-variance point estimates. |
-| **Repeated K-fold CV** | 7 folds x 5 repeats (35 partitions), non-nested. | Mean ± std, fold-level min/max. |
 | **Nested CV** *(primary)* | 5 outer folds x 5 repeats (25 partitions) with an inner loop for hyperparameter search only. | Bootstrap 95% CIs, pooled confusion matrices, label-permutation significance tests (1000 permutations). |
 
 The nested protocol is the headline result, since hyperparameters are selected strictly within each outer training fold, preventing leakage into model selection.
@@ -41,7 +38,7 @@ The nested protocol is the headline result, since hyperparameters are selected s
 
 ## Key results
 
-Under the nested cross-validation protocol, the strongest configurations reach a balanced accuracy of approximately **73.5%** (95% CI [69.8, 77.0]), with label-permutation tests confirming significance (*p* < 0.001). Single hold-out estimates run substantially higher, and the spread across protocols (roughly 22 percentage points) is itself reported as evidence of evaluation-rigor sensitivity. Detailed per-topology, per-kernel, and per-classifier tables are in `experiment2_section.pdf` (repeated K-fold CV) and `experiment3_section.pdf` (nested CV).
+Under the nested cross-validation protocol, the strongest configurations reach a balanced accuracy of approximately **73.5%** (95% CI [69.8, 77.0]), with label-permutation tests confirming significance (*p* < 0.001). Single hold-out estimates run substantially higher, and the spread between protocols is itself reported as evidence of evaluation-rigor sensitivity. Detailed per-topology, per-kernel, and per-classifier tables are in `experiment3_section.pdf` (nested CV).
 
 ---
 
@@ -71,10 +68,6 @@ HMM_RKHS_Classification_Project/
 |   |-- ppk_knn_svm_eeg_dataset.ipynb
 |   |-- EEG_real_and_synthetic_results/
 |
-|-- repeated k-fold CV/                   # Repeated stratified K-fold evaluation
-|   |-- repeatedcv_HIS_hmm_knn_svm.ipynb
-|   |-- repeatedcv_PPK_knn_svm_Dataset.ipynb
-|
 |-- nested CV/                            # Nested cross-validation (primary protocol)
 |   |-- rkhs_classifiers/
 |   |-- ppk_classifiers/
@@ -84,7 +77,6 @@ HMM_RKHS_Classification_Project/
 |   |-- subject_hard_vs_unlucky.csv
 |
 |-- subject_lengths_full.csv             # Per-subject recording lengths
-|-- experiment2_section.pdf              # Repeated K-fold CV results (manuscript section)
 |-- experiment3_section.pdf              # Nested CV results (manuscript section)
 |-- README.md
 ```
@@ -121,7 +113,6 @@ The HMM-GMM training, Baum-Welch routine, RKHS/MMD² computation, and PPK kernel
 2. Train subject-level models with `training-hmm.ipynb`; outputs land in `hmm_results/` for each topology.
 3. Choose an evaluation protocol:
    - Single hold-out: notebooks under `single held out test/`
-   - Repeated K-fold CV: notebooks under `repeated k-fold CV/`
    - Nested CV (recommended): notebooks under `nested CV/`
 4. Compare kernels and inspect fold-level behavior via the outputs in `nested CV/rkhs_vs_ppk_comparison/` and `nested CV/fold_analysis/`.
 

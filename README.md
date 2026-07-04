@@ -1,4 +1,6 @@
-# Interpretable EEG-Based Supported Diagnosis of ADHD Using Subject-Specific HMMs and Stationary RKHS Embeddings
+# HMM-RKHS Classification Project
+
+**Interpretable EEG-Based Supported Diagnosis of ADHD Using Subject-Specific HMMs and Stationary RKHS Embeddings.**
 
 This repository contains the full pipeline for classifying ADHD versus control children from resting/task EEG. Each subject's frontal EEG is modeled with a dedicated Hidden Markov Model with Gaussian Mixture Model emissions (HMM-GMM). The fitted generative models are then embedded in a Reproducing Kernel Hilbert Space (RKHS), where inter-subject similarity is computed in closed form. These kernels feed K-Nearest Neighbors (KNN) and Support Vector Machine (SVM) classifiers, evaluated on both real and synthetic EEG under several validation protocols of increasing statistical rigor.
 

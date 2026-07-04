@@ -1,4 +1,4 @@
-# HMM-RKHS Classification Project
+# EEG-Based Supported Diagnosis of ADHD using Subject-Specific HMMs and Stationary RKHS Embeddings
 
 **Interpretable EEG-Based Supported Diagnosis of ADHD Using Subject-Specific HMMs and Stationary RKHS Embeddings.**
 
